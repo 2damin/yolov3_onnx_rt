@@ -32,3 +32,19 @@ python3 yolov3_to_onnx.py --cfg ${CFG_PATH} --onnx ${ONNX_PATH} --num_class ${nu
 python3 onnx_to_tensorrt.py --cfg ${CFG_PATH} --onnx ${ONNX_PATH} --num_class ${num_of_classes} --input_img &{test_img_path}
 
 ```
+
+## Run Python2.7
+
+ ```
+ # install pip (python2.7)
+ 
+ sudo add-apt-repository universe
+ 
+ curl https://bootstrap.pypa.io/pip/2.7/get-pip.py --output get-pip.py
+ 
+ sudo python2 get-pip.py
+ 
+ # install pycuda
+ pip install pycuda
+ 
+ ```
