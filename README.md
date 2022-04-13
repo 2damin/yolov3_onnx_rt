@@ -48,3 +48,12 @@ python3 onnx_to_tensorrt.py --cfg ${CFG_PATH} --onnx ${ONNX_PATH} --num_class ${
  pip install pycuda
  
  ```
+ 
+ # Run ROS in JetsonTX2
+ ```
+ cd /home/nvidia/xycar_ws/src
+ git clone &{repo_name}
+ cd /home/nvidia/xycar_ws;catkin_make
+ cp ${trt & onnx files} &{repo_path}/src/
+ roslaunch &{repo_name} test.launch
+ ```
