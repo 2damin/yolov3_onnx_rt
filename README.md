@@ -16,3 +16,19 @@ Jetson TX2 jetpack == 4.2.3
 - OpenCV == 3.3.1
 
 - L4T R32.2
+
+
+## Guide
+
+```
+vim ~/.bashrc
+
+export OPENBLAS_CORETYPE=ARMV8
+
+#converting darkenet weights to onnx weights
+python3 yolov3_to_onnx.py --cfg ${CFG_PATH} --onnx ${ONNX_PATH} --num_class ${num_of_classes}
+
+#building trt model and run inference
+python3 onnx_to_tensorrt.py --cfg ${CFG_PATH} --onnx ${ONNX_PATH} --num_class ${num_of_classes} --input_img &{test_img_path}
+
+```
