@@ -19,9 +19,23 @@ If you want to convert **yolov3 or yolov3-tiny** pytorch model, need to convert 
 - L4T R32.2
 
 
+## Prerequisite
+
+### install pip(python2.7)
+```bash
+ sudo add-apt-repository universe
+ curl https://bootstrap.pypa.io/pip/2.7/get-pip.py --output get-pip.py
+ sudo python2 get-pip.py
+```
+
+### install packages
+```bash
+pip install -r requirements.txt
+```
+
 ## Guide
 
-```
+```bash
 vim ~/.bashrc
 
 export OPENBLAS_CORETYPE=ARMV8
@@ -33,28 +47,3 @@ sudo python yolov3_to_onnx.py --cfg ${CFG_PATH} --onnx ${ONNX_PATH} --num_class 
 sudo python onnx_to_tensorrt.py --cfg ${CFG_PATH} --onnx ${ONNX_PATH} --num_class ${num_of_classes} --input_img &{test_img_path}
 
 ```
-
-## Run Python2.7
-
- ```
- # install pip (python2.7)
- 
- sudo add-apt-repository universe
- 
- curl https://bootstrap.pypa.io/pip/2.7/get-pip.py --output get-pip.py
- 
- sudo python2 get-pip.py
- 
- # install pycuda
- pip install pycuda
- 
- ```
- 
- # Run ROS in JetsonTX2
- ```
- cd /home/nvidia/xycar_ws/src
- git clone &{repo_name}
- cd /home/nvidia/xycar_ws;catkin_make
- cp ${trt & onnx files} &{repo_path}/src/
- roslaunch &{repo_name} test.launch
- ```
