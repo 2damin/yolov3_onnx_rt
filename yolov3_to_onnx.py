@@ -48,12 +48,7 @@
 # Users Notice.
 #
 
-from __future__ import print_function
 from collections import OrderedDict
-import hashlib
-import os.path
-
-import wget
 
 import onnx
 from onnx import helper
@@ -65,9 +60,9 @@ import argparse
 
 def parse_args():
     parser = argparse.ArgumentParser(description="yolov3_to_onnx")
-    parser.add_argument('--cfg', dest='cfg', help="cfg of model",
+    parser.add_argument('--cfg', dest='cfg', help="the path of model cfg",
                         default=None, type=str)
-    parser.add_argument('--weights', dest='weights', help="weights of trained model",
+    parser.add_argument('--weights', dest='weights', help="the path of darknet weights of trained model",
                         default=None, type=str)
     parser.add_argument('--num_class', dest='num_class', help="the number of class",
                         default=None, type=int)
@@ -133,7 +128,6 @@ class DarkNetParser(object):
         Keyword argument:
         remainder -- a string with all raw text after the previously parsed layer
         """
-
         remainder = remainder.split(str('['), 1)
         if len(remainder) == 2:
             remainder = remainder[1]
@@ -146,7 +140,6 @@ class DarkNetParser(object):
             return None, None, None
         if remainder.replace(str(' '), str(''))[0] == '#':
             remainder = remainder.split(str('\n'), 1)[1]
-
         layer_param_block, remainder = remainder.split(str('\n\n'), 1)
         layer_param_lines = layer_param_block.split(str('\n'))[1:]
         layer_name = str(self.layer_counter).zfill(3) + str('_') + str(layer_type)
@@ -504,6 +497,7 @@ class GraphBuilderONNX(object):
             node_creators['shortcut'] = self._make_shortcut_node
             node_creators['route'] = self._make_route_node
             node_creators['upsample'] = self._make_upsample_node
+            node_creators['maxpool'] = self._make_maxpool_node
 
             if layer_type in node_creators.keys():
                 major_node_output_name, major_node_output_channels = \
@@ -738,40 +732,26 @@ class GraphBuilderONNX(object):
         self.param_dict[layer_name] = upsample_params
         return layer_name, channels
 
-
-def generate_md5_checksum(local_path):
-    """Returns the MD5 checksum of a local file.
-
-    Keyword argument:
-    local_path -- path of the file whose checksum shall be generated
-    """
-    with open(local_path,'rb') as local_file:
-        data = local_file.read()
-        return hashlib.md5(data).hexdigest()
-
-
-def download_file(local_path, link, checksum_reference=None):
-    """Checks if a local file is present and downloads it from the specified path otherwise.
-    If checksum_reference is specified, the file's md5 checksum is compared against the
-    expected value.
-
-    Keyword arguments:
-    local_path -- path of the file whose checksum shall be generated
-    link -- link where the file shall be downloaded from if it is not found locally
-    checksum_reference -- expected MD5 checksum of the file
-    """
-    if not os.path.exists(local_path):
-        print('Downloading from %s, this may take a while...' % link)
-        wget.download(link, local_path)
-        print()
-    if checksum_reference is not None:
-        checksum = generate_md5_checksum(local_path)
-        if checksum != checksum_reference:
-            raise ValueError(
-                'The MD5 checksum of local file %s differs from %s, please manually remove \
-                 the file and try again.' %
-                (local_path, checksum_reference))
-    return local_path
+    def _make_maxpool_node(self, layer_name, layer_dict):
+        stride=layer_dict['stride']
+        kernel_size = layer_dict['size']
+        previous_node_specs = self._get_previous_node_specs()
+        inputs = [previous_node_specs.name]
+        channels = previous_node_specs.channels
+        kernel_shape = [kernel_size, kernel_size]
+        strides = [stride, stride]
+        assert channels > 0
+        maxpool_node = helper.make_node(
+            'MaxPool',
+            inputs=inputs,
+            outputs=[layer_name],
+            kernel_shape=kernel_shape,
+            strides=strides,
+	    auto_pad='SAME_UPPER',
+            name=layer_name,
+        )
+        self._nodes.append(maxpool_node)
+        return layer_name, channels
 
 def parse_cfg_wh(cfg):
     w, h = 0, 0
@@ -785,16 +765,10 @@ def parse_cfg_wh(cfg):
     return w, h
 
 def main():
-    """Run the DarkNet-to-ONNX conversion for YOLOv3-608."""
+    """Run the DarkNet-to-ONNX conversion for YOLOv3(YOLOv3-tiny)."""
     # Have to use python 2 due to hashlib compatibility
     #if sys.version_info[0] > 2:
     #    raise Exception("This script is only compatible with python2, please re-run this script with python2. The rest of this sample can be run with either version of python.")
-
-    # Download the config for YOLOv3 if not present yet, and analyze the checksum:
-    # cfg_file_path = download_file(
-    #     'yolov3.cfg',
-    #     'https://raw.githubusercontent.com/pjreddie/darknet/f86901f6177dfc6116360a13cc06ab680e0c86b0/cfg/yolov3.cfg',
-    #     'b969a43a848bbf26901643b833cfb96c')
     
     cfg_file_path = args.cfg
     num_class = args.num_class
@@ -803,7 +777,7 @@ def main():
     # These are the only layers DarkNetParser will extract parameters from. The three layers of
     # type 'yolo' are not parsed in detail because they are included in the post-processing later:
     supported_layers = ['net', 'convolutional', 'shortcut',
-                        'route', 'upsample']
+                        'route', 'upsample', 'maxpool']
 
     # Create a DarkNetParser object, and the use it to generate an OrderedDict with all
     # layer's configs from the cfg file:
@@ -816,20 +790,17 @@ def main():
     # shape of (in CHW format):
     output_tensor_dims = OrderedDict()
     output_channels = (num_class + 5) * 3
-    output_tensor_dims['082_convolutional'] = [output_channels, height//32, width//32]
-    output_tensor_dims['094_convolutional'] = [output_channels, height//16, width//16]
-    output_tensor_dims['106_convolutional'] = [output_channels, height//8, width//8]
+    if "tiny" in args.cfg:
+         output_tensor_dims['016_convolutional'] = [output_channels, height//32, width//32]
+         output_tensor_dims['023_convolutional'] = [output_channels, height//16, width//16]
+    else:
+        output_tensor_dims['082_convolutional'] = [output_channels, height//32, width//32]
+        output_tensor_dims['094_convolutional'] = [output_channels, height//16, width//16]
+        output_tensor_dims['106_convolutional'] = [output_channels, height//8, width//8]
 
     # Create a GraphBuilderONNX object with the known output tensor dimensions:
     builder = GraphBuilderONNX(output_tensor_dims)
 
-    # We want to populate our network with weights later, that's why we download those from
-    # the official mirror (and verify the checksum):
-
-    # weights_file_path = download_file(
-    #     'yolov3.weights',
-    #     'https://pjreddie.com/media/files/yolov3.weights',
-    #     'c84e5b99d0e52cd466ae710cadf6d84c')
     weights_file_path = args.weights
 
     # Now generate an ONNX graph with weights from the previously parsed layer configurations

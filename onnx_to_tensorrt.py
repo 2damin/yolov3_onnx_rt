@@ -47,37 +47,27 @@
 # comments to the code, the above Disclaimer and U.S. Government End
 # Users Notice.
 #
-
-from __future__ import print_function
-
+import sys, os, time
 import numpy as np
 import tensorrt as trt
-import pycuda.driver as cuda
-import pycuda.autoinit
+import onnx
+import common
+import argparse
 from PIL import Image,ImageDraw
 
-from yolov3_to_onnx import download_file
 from data_processing import PreprocessYOLO, PostprocessYOLO, ALL_CATEGORIES
-
-import sys, os
-sys.path.insert(1, os.path.join(sys.path[0], ".."))
-import common
-
-import onnx
-import time
-import argparse
 
 TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
 
 def parse_args():
     parser = argparse.ArgumentParser(description="yolov3_to_onnx")
-    parser.add_argument('--cfg', dest='cfg', help="cfg of model",
+    parser.add_argument('--cfg', dest='cfg', help="the path of model cfg",
                         default=None, type=str)
-    parser.add_argument('--onnx', dest='onnx', help="onnx weights of trained model",
+    parser.add_argument('--onnx', dest='onnx', help="the path of onnx model",
                         default=None, type=str)
     parser.add_argument('--num_class', dest='num_class', help="the number of class",
                         default=None, type=int)
-    parser.add_argument('--input_img', dest='input_img', help="input_img",
+    parser.add_argument('--input_img', dest='input_img', help="the path of input_img",
                         default=None, type=str)
     
     if len(sys.argv) == 1:
@@ -173,19 +163,16 @@ def get_engine(onnx_file_path, engine_file_path=""):
         return build_engine()
 
 def main():
-    """Create a TensorRT engine for ONNX-based YOLOv3-608 and run inference."""
+    """Create a TensorRT engine for ONNX-based YOLOv3(or YOLOv3-tiny) and run inference."""
     cfg_file_path = args.cfg
     num_class = args.num_class
     width, height, masks, anchors = parse_cfg_wh(cfg_file_path)
-    # Try to load a previously generated YOLOv3-608 network graph in ONNX format:
+    # Try to load a previously generated YOLOv3 network graph in ONNX format:
     onnx_file_path = args.onnx
     engine_file_path = onnx_file_path.replace(".onnx", '.trt')
-
     print(onnx.checker.check_model(onnx_file_path))
-    # Download a dog image and save it to the following file path:
-    # input_image_path = download_file('dog.jpg',
-    #     'https://github.com/pjreddie/darknet/raw/f86901f6177dfc6116360a13cc06ab680e0c86b0/data/dog.jpg', checksum_reference=None)
-    input_image_path = args.input_img #"dog.jpg" "000178.png"
+
+    input_image_path = args.input_img
 
     # Two-dimensional tuple with the target network's (spatial) input resolution in HW ordered
     input_resolution_yolov3_WH = (width, height)
@@ -198,7 +185,10 @@ def main():
 
     # Output shapes expected by the post-processor
     output_channels = (num_class + 5) * 3
-    output_shapes = [(1, output_channels, height//32, width//32), (1, output_channels, height//16, width//16), (1, output_channels, height//8, width//8)]
+    if len(masks) == 2:
+        output_shapes = [(1, output_channels, height//32, width//32), (1, output_channels, height//16, width//16)]
+    else:
+        output_shapes = [(1, output_channels, height//32, width//32), (1, output_channels, height//16, width//16), (1, output_channels, height//8, width//8)]
 
     postprocessor_args = {"yolo_masks": masks,                    # A list of 3 three-dimensional tuples for the YOLO masks
                           "yolo_anchors": anchors,
